@@ -1,0 +1,71 @@
+/*
+ * Copyright 2015 Andrew Comminos <andrew@morlunk.com>
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+/**
+ * Sets up Leeroy for the current Gradle project.
+ * On a Jenkins build server, the "leeroy" build flavor will be available to select.
+ * @param leeroyDir The path to the Leeroy-Gradle project. Used to fetch flavor resources.
+ * @param artifactRegex A regular expression used to identify the APK artifact to retrieve
+ *                      when updating from Jenkins.
+ * @param dimension An optional dimension name. To be used if (for whatever reason), your
+ *                  project already has a 'leeroy' flavor dimension.
+ */
+def setupLeeroy(String leeroyDir, String artifactRegex, String dimension = "leeroy") {
+    // Check for Jenkins environment variables; if present, inject build flavor.
+    if (System.getenv("BUILD_NUMBER")) {
+        android {
+            // Create new 'leeroy' flavor dimension. Append it to existing dimensions if present.
+            // Using a new flavor dimension allows devs to customize their Jenkins builds.
+            if (getFlavorDimensionList()) {
+                if (getFlavorDimensionList().contains(dimension))
+                    throw new GradleException("Leeroy: required flavor dimension '${dimension}' already in use.");
+                def list = new ArrayList<String>(getFlavorDimensionList())
+                list << dimension
+                setFlavorDimensionList list
+            } else {
+                // Note that the Android plugin requires us to assign a
+                // dimension to each build flavor if flavorDimensions is set.
+                // FIXME: very hackish, will break eventually.
+                //        using a new dimension for leeroy is pretty bad in
+                //        general.
+                flavorDimensions "default", dimension
+                productFlavors.all {
+                    if (!flavorDimension)
+                        flavorDimension "default"
+                }
+            }
+            
+            // Add new leeroy flavor within the new flavor dimension.
+            productFlavors {
+                leeroy {
+                    flavorDimension dimension
+                    // Add manifest placeholders with Jenkins envvar data.
+                    manifestPlaceholders += [LEEROY_SUPPORTED: true,
+                                             JENKINS_BUILD   : System.getenv("BUILD_NUMBER"),
+                                             JENKINS_URL     : System.getenv("JOB_URL"),
+                                             JENKINS_ARTIFACT: artifactRegex]
+                }
+            }
+            
+            // Merge manifest with Leeroy data.
+            sourceSets.leeroy.setRoot(leeroyDir)
+        }
+    } else {
+        logger.info('Jenkins environment variables not detected, Leeroy builds disabled.')
+    }
+}
+
+ext.setupLeeroy = this.&setupLeeroy
